@@ -1,0 +1,58 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  active?: 'home' | 'anime' | 'games' | 'culture' | 'archive' | 'about';
+}
+const { title, active = 'home' } = Astro.props;
+
+const todayLabel = new Date().toLocaleDateString('en-GB', {
+  weekday: 'short', day: '2-digit', month: 'short', year: 'numeric'
+});
+---
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{title} — Elsteins</title>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="top-bar">
+        <div class="masthead">
+          <span class="kicker">Anime / Games / Japan</span>
+          <a href="/" class="site-title">Elsteins</a>
+        </div>
+        <div class="top-bar-right">
+          <div class="date-badge">{todayLabel}</div>
+          <a href="/archive" class="btn-accent">Search</a>
+        </div>
+      </div>
+
+      <nav class="main-nav">
+        <a href="/" class={active === 'home' ? 'active' : ''}>Front</a>
+        <a href="/category/anime" class={active === 'anime' ? 'active' : ''}>Anime</a>
+        <a href="/category/games" class={active === 'games' ? 'active' : ''}>Games</a>
+        <a href="/category/culture" class={active === 'culture' ? 'active' : ''}>Culture</a>
+        <a href="/archive" class={active === 'archive' ? 'active' : ''}>Archive</a>
+        <a href="/about" class={active === 'about' ? 'active' : ''}>About</a>
+      </nav>
+
+      <div class="ticker">
+        <span class="ticker-label">Now</span>
+        <div class="ticker-items">
+          <span>Fall 2026 simulcast list updated</span>
+          <span>TGS floor report, day two</span>
+          <span>Kyoto museum reopens the Tezuka wing</span>
+        </div>
+      </div>
+    </header>
+
+    <slot />
+
+    <footer>Anime · Games · Japan Culture — since 2021</footer>
+  </div>
+</body>
+</html>

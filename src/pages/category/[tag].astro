@@ -1,0 +1,29 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+
+export async function getStaticPaths() {
+  return [
+    { params: { tag: 'anime' }, props: { label: 'Anime' } },
+    { params: { tag: 'games' }, props: { label: 'Games' } },
+    { params: { tag: 'culture' }, props: { label: 'Culture' } }
+  ];
+}
+
+const { label } = Astro.props;
+const posts = (await getCollection('posts', p => p.data.tag === label)).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf()
+);
+---
+<Layout title={label} active={label.toLowerCase()}>
+  <section class="section">
+    <div class="section-header"><h2>{label}</h2></div>
+    {posts.length === 0 && <p style="padding:24px">No posts in this category yet.</p>}
+    {posts.map(post => (
+      <a href={`/posts/${post.slug}`} class="brief-item" style="border-bottom:2px solid var(--ink)">
+        <span class="brief-tag">{post.data.tag} · {post.data.date.toLocaleDateString('en-GB')}</span>
+        <span class="brief-title" style="font-size:18px">{post.data.title}</span>
+      </a>
+    ))}
+  </section>
+</Layout>

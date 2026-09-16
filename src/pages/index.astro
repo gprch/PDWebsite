@@ -1,0 +1,70 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../layouts/Layout.astro';
+
+const allPosts = (await getCollection('posts')).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf()
+);
+
+const hero = allPosts.find(p => p.data.featured) ?? allPosts[0];
+const rest = allPosts.filter(p => p.slug !== hero?.slug);
+const latest = rest.slice(0, 3);
+const briefs = rest.slice(3, 8);
+
+function timeAgo(date: Date) {
+  const days = Math.floor((Date.now() - date.valueOf()) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return '1 day ago';
+  return `${days} days ago`;
+}
+---
+<Layout title="Front page" active="home">
+  <main>
+    {hero && (
+      <section class="hero">
+        <div class="hero-main">
+          <div class="pill-row">
+            <span class="pill">{hero.data.tag}</span>
+            <span class="meta-mono">{hero.data.readMinutes} min read · {timeAgo(hero.data.date)}</span>
+          </div>
+          <a href={`/posts/${hero.slug}`} class="hero-title">{hero.data.title}</a>
+          {hero.data.dek && <p class="hero-dek">{hero.data.dek}</p>}
+          <div class="image-placeholder"><span>lead image — key visual 16:9</span></div>
+        </div>
+
+        <aside class="rail">
+          <div class="rail-header">Briefs</div>
+          {briefs.map(b => (
+            <a href={`/posts/${b.slug}`} class="brief-item">
+              <span class="brief-tag">{b.data.tag} · {timeAgo(b.data.date)}</span>
+              <span class="brief-title">{b.data.title}</span>
+            </a>
+          ))}
+          <div class="subscribe-box">
+            <span class="label">Weekly</span>
+            <span class="headline">One long essay every Sunday. No listicles.</span>
+            <button>Subscribe</button>
+          </div>
+        </aside>
+      </section>
+    )}
+
+    <section class="section">
+      <div class="section-header">
+        <h2>Latest</h2>
+        <a href="/archive">All posts →</a>
+      </div>
+      <div class="card-grid">
+        {latest.map(post => (
+          <a href={`/posts/${post.slug}`} class="card">
+            <div class="image-placeholder small"><span>{post.data.tag}</span></div>
+            <span class="brief-tag">{post.data.tag} · {timeAgo(post.data.date)}</span>
+            <h3 class="card-title">{post.data.title}</h3>
+            {post.data.dek && <p class="card-dek">{post.data.dek}</p>}
+            {post.data.score && <span class="score-badge">SCORE {post.data.score}</span>}
+          </a>
+        ))}
+      </div>
+    </section>
+  </main>
+</Layout>

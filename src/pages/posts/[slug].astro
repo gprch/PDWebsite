@@ -1,0 +1,25 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('posts');
+  return posts.map(post => ({
+    params: { slug: post.slug },
+    props: { post }
+  }));
+}
+
+const { post } = Astro.props;
+const { Content } = await post.render();
+const dateLabel = post.data.date.toLocaleDateString('en-GB', {
+  day: '2-digit', month: 'short', year: 'numeric'
+});
+---
+<Layout title={post.data.title}>
+  <div class="post-body">
+    <span class="meta-mono">{post.data.tag} · {post.data.readMinutes} min read · {dateLabel}</span>
+    <h1>{post.data.title}</h1>
+    <Content />
+  </div>
+</Layout>

@@ -1,0 +1,30 @@
+backend:
+  name: git-gateway
+  branch: main
+
+# Netlify Identity + Git Gateway handles login/auth for the CMS.
+# See README.md for the one-time setup steps in your Netlify dashboard.
+
+media_folder: "public/images"
+public_folder: "/images"
+
+collections:
+  - name: "posts"
+    label: "Posts"
+    folder: "src/content/posts"
+    create: true
+    slug: "{{slug}}"
+    extension: "md"
+    format: "frontmatter"
+    fields:
+      - { label: "Title", name: "title", widget: "string" }
+      - { label: "Dek / summary", name: "dek", widget: "text", required: false }
+      - label: "Category"
+        name: "tag"
+        widget: "select"
+        options: ["Anime", "Games", "Culture", "Analysis"]
+      - { label: "Date", name: "date", widget: "datetime" }
+      - { label: "Read time (minutes)", name: "readMinutes", widget: "number", default: 6 }
+      - { label: "Score (reviews only)", name: "score", widget: "string", required: false }
+      - { label: "Feature on homepage", name: "featured", widget: "boolean", default: false }
+      - { label: "Body", name: "body", widget: "markdown" }
