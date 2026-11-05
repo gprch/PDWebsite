@@ -1,0 +1,700 @@
+---
+// Work Tracker — halaman internal untuk mencatat request / pekerjaan per user & section.
+// Data disimpan lewat Netlify Function (/api/tracker) + Netlify Blobs.
+// Saat dijalankan lokal tanpa Netlify, otomatis pakai penyimpanan browser (mode lokal).
+---
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Work Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style is:global>
+    :root {
+      --bg: #f3f2f2; --ink: #201e1d; --ink-soft: #605d5d; --line: rgba(32,30,29,.18);
+      --panel: #ffffff; --panel-2: #eae9e9; --accent: #ec3013; --accent-hover: #dd2b0f;
+      --ok: #1f7a4d; --ok-bg: #dff3e8; --warn: #9a5b00; --warn-bg: #fdf0d5;
+      --info: #1d4f91; --info-bg: #e1ebfa; --mute-bg: #e7e5e4; --danger: #b42318; --danger-bg: #fde4e1;
+      --mono: ui-monospace, Menlo, monospace; --sans: 'Archivo', system-ui, sans-serif;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    a { color: var(--info); }
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 0 16px 64px; }
+
+    header.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 20px 0 16px; border-bottom: 2px solid var(--ink); }
+    .kicker { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-soft); }
+    h1 { font-size: 28px; font-weight: 900; letter-spacing: -.02em; line-height: 1.05; }
+    .mode { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
+    .mode b { color: var(--ink); }
+
+    .btn { border: 2px solid var(--ink); background: var(--panel); padding: 8px 14px; font-weight: 700; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+    .btn:hover { background: var(--panel-2); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: var(--accent-hover); }
+    .btn.danger { color: var(--danger); border-color: var(--danger); }
+    .btn.small { padding: 4px 10px; font-size: 11px; }
+    .btn.ghost { border-color: transparent; background: transparent; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+    .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; border: 2px solid var(--ink); border-top: 0; background: var(--ink); }
+    .stat { padding: 12px 16px; cursor: pointer; background: var(--panel); }
+    .stat:hover { background: var(--panel-2); }
+    .stat .n { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; }
+    .stat .l { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); }
+
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 16px 0; }
+    .toolbar input[type=search] { flex: 1 1 240px; min-width: 0; }
+    .field, .toolbar input, .toolbar select { border: 2px solid var(--ink); background: var(--panel); padding: 7px 10px; min-width: 0; }
+    .seg { display: inline-flex; border: 2px solid var(--ink); }
+    .seg button { border: 0; background: var(--panel); padding: 7px 12px; font-weight: 700; font-size: 12px; cursor: pointer; }
+    .seg button + button { border-left: 2px solid var(--ink); }
+    .seg button.on { background: var(--ink); color: var(--bg); }
+
+    .section-block { margin-top: 24px; }
+    .section-title { display: flex; align-items: baseline; gap: 10px; font-size: 20px; font-weight: 900; letter-spacing: -.01em; padding-bottom: 6px; border-bottom: 2px solid var(--ink); }
+    .section-title .cnt, .user-head .cnt { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-soft); }
+    .user-block { margin-top: 14px; }
+    .user-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-weight: 800; font-size: 12px; flex: none; }
+    .user-head .name { font-weight: 800; font-size: 15px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+
+    .card { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--ink-soft); padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .card:hover { border-color: var(--ink); }
+    .card.st-baru { border-left-color: var(--info); }
+    .card.st-proses { border-left-color: var(--warn); }
+    .card.st-menunggu { border-left-color: #8a6fd1; }
+    .card.st-selesai { border-left-color: var(--ok); opacity: .82; }
+    .card .title { font-weight: 800; font-size: 15px; overflow-wrap: anywhere; }
+    .card .note { color: var(--ink-soft); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+    .meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--ink-soft); }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; background: var(--mute-bg); color: var(--ink); }
+    .pill.baru { background: var(--info-bg); color: var(--info); }
+    .pill.proses { background: var(--warn-bg); color: var(--warn); }
+    .pill.menunggu { background: #ece6fb; color: #5b3fb0; }
+    .pill.selesai { background: var(--ok-bg); color: var(--ok); }
+    .pill.project { background: var(--ink); color: var(--bg); }
+    .pill.p-tinggi { background: var(--danger-bg); color: var(--danger); }
+    .pill.overdue { background: var(--danger); color: #fff; }
+    .foot { display: flex; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border: 2px solid var(--ink); }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); background: var(--panel-2); cursor: pointer; white-space: nowrap; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #faf9f9; }
+    .table-wrap { overflow-x: auto; }
+    td .sub { color: var(--ink-soft); font-size: 12px; }
+
+    .empty { padding: 48px 16px; text-align: center; color: var(--ink-soft); border: 2px dashed var(--line); margin-top: 16px; }
+    .empty h3 { color: var(--ink); margin-bottom: 6px; }
+
+    /* modal & drawer */
+    .overlay { position: fixed; inset: 0; background: rgba(20,18,17,.45); display: none; z-index: 50; }
+    .overlay.open { display: block; }
+    .modal { position: fixed; z-index: 60; background: var(--bg); border: 2px solid var(--ink); display: none; flex-direction: column; max-height: calc(100vh - 32px); }
+    .modal.open { display: flex; }
+    .modal.form { top: 16px; left: 50%; transform: translateX(-50%); width: min(720px, calc(100vw - 32px)); }
+    .modal.drawer { top: 0; right: 0; bottom: 0; width: min(560px, 100vw); max-height: none; border-width: 0 0 0 2px; }
+    .modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 16px; border-bottom: 2px solid var(--ink); background: var(--panel); }
+    .modal-head h2 { font-size: 18px; font-weight: 900; overflow-wrap: anywhere; }
+    .modal-body { padding: 16px; overflow-y: auto; flex: 1; }
+    .modal-foot { padding: 12px 16px; border-top: 2px solid var(--ink); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; background: var(--panel); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .full { grid-column: 1 / -1; }
+    label.f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; }
+    label.f span.h { font-weight: 400; color: var(--ink-soft); }
+    label.f .field { width: 100%; }
+    textarea.field { resize: vertical; min-height: 70px; }
+
+    .kv { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; font-size: 13px; margin-bottom: 16px; }
+    .kv dt { color: var(--ink-soft); }
+    .kv dd { overflow-wrap: anywhere; }
+    .h3 { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); margin: 18px 0 8px; }
+    .desc { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line); padding: 10px 12px; }
+    .links a { display: block; overflow-wrap: anywhere; padding: 4px 0; }
+    .timeline { list-style: none; border-left: 2px solid var(--ink); margin-left: 6px; }
+    .timeline li { position: relative; padding: 0 0 14px 16px; }
+    .timeline li::before { content: ''; position: absolute; left: -7px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--ink); }
+    .timeline .when { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); display: flex; justify-content: space-between; gap: 8px; }
+    .timeline .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .addnote { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+
+    .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; font-size: 13px; z-index: 80; display: none; max-width: calc(100vw - 32px); }
+    .toast.show { display: block; }
+
+    .login { max-width: 380px; margin: 12vh auto 0; background: var(--panel); border: 2px solid var(--ink); padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+    .login p { color: var(--ink-soft); font-size: 13px; }
+    .err { color: var(--danger); font-size: 13px; }
+    [hidden] { display: none !important; }
+
+    @media (max-width: 720px) {
+      .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .grid2 { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: 1fr; }
+      h1 { font-size: 24px; }
+      .kv { grid-template-columns: 100px 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <!-- LOGIN -->
+  <div class="wrap" id="loginView" hidden>
+    <form class="login" id="loginForm">
+      <div class="kicker">Internal</div>
+      <h1>Work Tracker</h1>
+      <p>Masukkan password tracker untuk membuka data.</p>
+      <input class="field" type="password" id="loginPass" placeholder="Password" autocomplete="current-password" required />
+      <div class="err" id="loginErr"></div>
+      <button class="btn primary" type="submit">Masuk</button>
+    </form>
+  </div>
+
+  <!-- APP -->
+  <div class="wrap" id="appView" hidden>
+    <header class="top">
+      <div>
+        <div class="kicker">Tracking pekerjaan &amp; request</div>
+        <h1>Work Tracker</h1>
+        <div class="mode" id="modeLabel"></div>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnExportCsv" title="Download semua data sebagai CSV (bisa dibuka di Excel)">Export CSV</button>
+        <button class="btn" id="btnBackup" title="Download backup JSON">Backup</button>
+        <button class="btn" id="btnImport" title="Pulihkan dari file backup JSON">Import</button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden />
+        <button class="btn primary" id="btnNew">+ Pekerjaan baru</button>
+      </div>
+    </header>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Cari user, pekerjaan, project, catatan…" />
+      <select id="fSection"><option value="">Semua section</option></select>
+      <select id="fStatus">
+        <option value="">Semua status</option>
+        <option value="aktif">Belum selesai</option>
+        <option>Baru</option><option>Proses</option><option>Menunggu</option><option>Selesai</option>
+      </select>
+      <select id="fType">
+        <option value="">Request &amp; Project</option>
+        <option>Request</option><option>Project</option>
+      </select>
+      <div class="seg" id="viewSeg">
+        <button data-view="group" class="on">Per user</button>
+        <button data-view="table">Tabel</button>
+      </div>
+    </div>
+
+    <main id="list"></main>
+  </div>
+
+  <!-- FORM MODAL -->
+  <div class="overlay" id="overlay"></div>
+  <form class="modal form" id="formModal" autocomplete="off">
+    <div class="modal-head">
+      <h2 id="formTitle">Pekerjaan baru</h2>
+      <button type="button" class="btn ghost small" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="grid2">
+        <label class="f">Nama user (yang request) *
+          <input class="field" name="user" list="dlUsers" required placeholder="mis. Chendika Putra" />
+        </label>
+        <label class="f">Section *
+          <input class="field" name="section" list="dlSections" required placeholder="mis. HR Operations" />
+        </label>
+        <label class="f">Jenis
+          <select class="field" name="type"><option>Request</option><option>Project</option></select>
+        </label>
+        <label class="f">Nama project <span class="h">(opsional, untuk mengelompokkan)</span>
+          <input class="field" name="project" list="dlProjects" placeholder="mis. TPC Recruitment" />
+        </label>
+        <label class="f full">Pekerjaan / request *
+          <input class="field" name="title" required placeholder="mis. Rekap perhitungan pengeluaran budget Q3" />
+        </label>
+        <label class="f full">Detail <span class="h">(apa yang diminta, konteks, kriteria selesai)</span>
+          <textarea class="field" name="description" rows="3"></textarea>
+        </label>
+        <label class="f">Status
+          <select class="field" name="status"><option>Baru</option><option>Proses</option><option>Menunggu</option><option>Selesai</option></select>
+        </label>
+        <label class="f">Prioritas
+          <select class="field" name="priority"><option>Normal</option><option>Tinggi</option><option>Rendah</option></select>
+        </label>
+        <label class="f">Tanggal request
+          <input class="field" type="date" name="requestDate" />
+        </label>
+        <label class="f">Deadline
+          <input class="field" type="date" name="dueDate" />
+        </label>
+        <label class="f full">Posisi terakhir / progress <span class="h">(mis. "Interview user tahap 2", "Menunggu approval")</span>
+          <input class="field" name="lastPosition" placeholder="Sudah sampai mana pekerjaannya" />
+        </label>
+        <label class="f full">Link data / dokumen <span class="h">(satu per baris, format: Nama | link — mis. CV Kandidat | https://drive…)</span>
+          <textarea class="field" name="links" rows="3" placeholder="CV Kandidat A | https://drive.google.com/...&#10;Rekap Budget | https://docs.google.com/..."></textarea>
+        </label>
+        <label class="f full" id="firstNoteWrap">Catatan awal <span class="h">(opsional)</span>
+          <textarea class="field" name="firstNote" rows="2"></textarea>
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span></span>
+      <div class="row">
+        <button type="button" class="btn" data-close>Batal</button>
+        <button type="submit" class="btn primary">Simpan</button>
+      </div>
+    </div>
+  </form>
+
+  <!-- DETAIL DRAWER -->
+  <aside class="modal drawer" id="drawer">
+    <div class="modal-head">
+      <div>
+        <div class="kicker" id="dKicker"></div>
+        <h2 id="dTitle"></h2>
+      </div>
+      <button type="button" class="btn ghost small" data-close>✕</button>
+    </div>
+    <div class="modal-body" id="dBody"></div>
+    <div class="modal-foot">
+      <button class="btn danger small" id="dDelete">Hapus</button>
+      <div class="row">
+        <select class="field" id="dStatus" title="Ubah status"><option>Baru</option><option>Proses</option><option>Menunggu</option><option>Selesai</option></select>
+        <button class="btn small" id="dEdit">Edit</button>
+      </div>
+    </div>
+  </aside>
+
+  <datalist id="dlUsers"></datalist>
+  <datalist id="dlSections"></datalist>
+  <datalist id="dlProjects"></datalist>
+  <div class="toast" id="toast"></div>
+
+  <script is:inline>
+  (() => {
+    const API = '/api/tracker';
+    const LS_DATA = 'workTracker.items';
+    const LS_KEY = 'workTracker.key';
+    const LS_VIEW = 'workTracker.view';
+    const DEFAULT_SECTIONS = ['HR Operations'];
+    const STATUSES = ['Baru', 'Proses', 'Menunggu', 'Selesai'];
+
+    let items = [];
+    let mode = 'cloud';       // 'cloud' (Netlify) atau 'local' (browser)
+    let key = '';
+    let view = 'group';
+    let sortKey = 'updatedAt', sortDir = -1;
+    let editingId = null, openId = null;
+
+    const $ = (s) => document.querySelector(s);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+    const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+    const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const today = () => new Date().toISOString().slice(0, 10);
+    const initials = (n) => n.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+    const fmtDate = (d) => d ? new Date(d.length === 10 ? d + 'T00:00:00' : d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const fmtDateTime = (d) => d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+    const ago = (d) => {
+      const s = (Date.now() - new Date(d).getTime()) / 1000;
+      if (s < 60) return 'baru saja';
+      if (s < 3600) return Math.floor(s / 60) + ' mnt lalu';
+      if (s < 86400) return Math.floor(s / 3600) + ' jam lalu';
+      if (s < 86400 * 30) return Math.floor(s / 86400) + ' hari lalu';
+      return fmtDate(d);
+    };
+    const isOverdue = (it) => it.dueDate && it.status !== 'Selesai' && it.dueDate < today();
+    const latestNote = (it) => (it.notes || []).slice().sort((a, b) => b.at.localeCompare(a.at))[0];
+    const toast = (msg) => { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600); };
+
+    // ---------- storage ----------
+    async function api(method, body) {
+      const res = await fetch(API, {
+        method,
+        headers: { 'content-type': 'application/json', 'x-tracker-key': key },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) { const e = new Error('no-api'); e.noApi = true; throw e; }
+      const data = await res.json();
+      if (!res.ok) { const e = new Error(data.error || 'Gagal'); e.status = res.status; throw e; }
+      return data;
+    }
+    function saveLocal() { lsSet(LS_DATA, JSON.stringify(items)); }
+
+    async function persist(action, payload) {
+      if (mode === 'local') { saveLocal(); return; }
+      try {
+        const data = await api('POST', { action, ...payload });
+        items = data.items;
+      } catch (e) {
+        toast('Gagal menyimpan ke server: ' + e.message + '. Coba lagi.');
+        throw e;
+      }
+    }
+
+    async function start() {
+      key = lsGet(LS_KEY) || '';
+      view = lsGet(LS_VIEW) || 'group';
+      try {
+        const data = await api('GET');
+        items = data.items || [];
+        mode = 'cloud';
+        showApp();
+      } catch (e) {
+        if (e.noApi) {
+          mode = 'local';
+          try { items = JSON.parse(lsGet(LS_DATA) || '[]'); } catch { items = []; }
+          showApp();
+        } else if (e.status === 401) {
+          showLogin(key ? 'Password salah.' : '');
+        } else {
+          showLogin(e.message);
+        }
+      }
+    }
+
+    function showLogin(err) {
+      $('#appView').hidden = true;
+      $('#loginView').hidden = false;
+      $('#loginErr').textContent = err || '';
+      $('#loginPass').focus();
+    }
+    $('#loginForm').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      key = $('#loginPass').value;
+      lsSet(LS_KEY, key);
+      start();
+    });
+
+    function showApp() {
+      $('#loginView').hidden = true;
+      $('#appView').hidden = false;
+      $('#modeLabel').innerHTML = mode === 'cloud'
+        ? 'Data tersimpan <b>online</b> (Netlify) — bisa dibuka dari perangkat mana pun.'
+        : 'Mode <b>lokal</b>: data hanya tersimpan di browser ini. Rutin klik Backup.';
+      document.querySelectorAll('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+      render();
+    }
+
+    // ---------- filters ----------
+    function filtered() {
+      const q = $('#q').value.trim().toLowerCase();
+      const sec = $('#fSection').value, st = $('#fStatus').value, ty = $('#fType').value;
+      return items.filter((it) => {
+        if (sec && it.section !== sec) return false;
+        if (st === 'aktif' && it.status === 'Selesai') return false;
+        if (st === 'overdue' && !isOverdue(it)) return false;
+        if (st && st !== 'aktif' && st !== 'overdue' && it.status !== st) return false;
+        if (ty && it.type !== ty) return false;
+        if (q) {
+          const hay = [it.user, it.section, it.project, it.title, it.description, it.lastPosition,
+            ...(it.notes || []).map((n) => n.text), ...(it.links || []).map((l) => l.label)].join(' ').toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function refreshLists() {
+      const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      const sections = uniq([...DEFAULT_SECTIONS, ...items.map((i) => i.section)]);
+      $('#dlUsers').innerHTML = uniq(items.map((i) => i.user)).map((v) => `<option value="${esc(v)}">`).join('');
+      $('#dlSections').innerHTML = sections.map((v) => `<option value="${esc(v)}">`).join('');
+      $('#dlProjects').innerHTML = uniq(items.map((i) => i.project)).map((v) => `<option value="${esc(v)}">`).join('');
+      const fs = $('#fSection'), cur = fs.value;
+      fs.innerHTML = '<option value="">Semua section</option>' + uniq(items.map((i) => i.section)).map((v) => `<option>${esc(v)}</option>`).join('');
+      fs.value = cur;
+    }
+
+    // ---------- render ----------
+    function render() {
+      refreshLists();
+      const s = { total: items.length, aktif: 0, proses: 0, overdue: 0, selesai: 0 };
+      items.forEach((i) => {
+        if (i.status !== 'Selesai') s.aktif++;
+        if (i.status === 'Proses') s.proses++;
+        if (i.status === 'Selesai') s.selesai++;
+        if (isOverdue(i)) s.overdue++;
+      });
+      $('#stats').innerHTML = [
+        ['', s.total, 'Total'], ['aktif', s.aktif, 'Belum selesai'], ['Proses', s.proses, 'Dikerjakan'],
+        ['overdue', s.overdue, 'Lewat deadline'], ['Selesai', s.selesai, 'Selesai']
+      ].map(([f, n, l]) => `<div class="stat" data-f="${f}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+      const list = filtered();
+      const el = $('#list');
+      if (!items.length) {
+        el.innerHTML = `<div class="empty"><h3>Belum ada pekerjaan</h3><p>Klik <b>+ Pekerjaan baru</b> untuk mencatat request pertama.</p></div>`;
+        return;
+      }
+      if (!list.length) { el.innerHTML = `<div class="empty"><h3>Tidak ada yang cocok</h3><p>Ubah kata kunci atau filter.</p></div>`; return; }
+      el.innerHTML = view === 'table' ? renderTable(list) : renderGroups(list);
+    }
+
+    const statusRank = { Proses: 0, Baru: 1, Menunggu: 2, Selesai: 3 };
+    function renderGroups(list) {
+      const bySection = {};
+      list.forEach((it) => { ((bySection[it.section] ||= {})[it.user] ||= []).push(it); });
+      return Object.keys(bySection).sort().map((sec) => {
+        const users = bySection[sec];
+        const count = Object.values(users).reduce((a, b) => a + b.length, 0);
+        return `<section class="section-block">
+          <div class="section-title">${esc(sec)} <span class="cnt">${Object.keys(users).length} user · ${count} pekerjaan</span></div>
+          ${Object.keys(users).sort().map((u, idx) => {
+            const its = users[u].sort((a, b) => (statusRank[a.status] - statusRank[b.status]) || b.updatedAt.localeCompare(a.updatedAt));
+            const open = its.filter((i) => i.status !== 'Selesai').length;
+            return `<div class="user-block">
+              <div class="user-head"><div class="avatar">${esc(initials(u))}</div>
+                <div class="name">${idx + 1}. ${esc(u)}</div><span class="cnt">${open} aktif · ${its.length} total</span></div>
+              <div class="cards">${its.map(card).join('')}</div>
+            </div>`;
+          }).join('')}
+        </section>`;
+      }).join('');
+    }
+
+    function badges(it) {
+      return `<span class="pill ${it.status.toLowerCase()}">${esc(it.status)}</span>`
+        + (it.type === 'Project' ? `<span class="pill project">Project</span>` : '')
+        + (it.project ? `<span class="pill">${esc(it.project)}</span>` : '')
+        + (it.priority === 'Tinggi' ? `<span class="pill p-tinggi">Prioritas tinggi</span>` : '')
+        + (isOverdue(it) ? `<span class="pill overdue">Lewat deadline</span>` : '');
+    }
+
+    function card(it) {
+      const n = latestNote(it);
+      const line = it.lastPosition ? '📍 ' + it.lastPosition : (n ? n.text : it.description);
+      return `<article class="card st-${it.status.toLowerCase()}" data-id="${esc(it.id)}">
+        <div class="meta">${badges(it)}</div>
+        <div class="title">${esc(it.title)}</div>
+        ${line ? `<div class="note">${esc(line)}</div>` : ''}
+        <div class="foot"><span>${it.dueDate ? 'Deadline ' + fmtDate(it.dueDate) : (it.notes || []).length + ' catatan'}${(it.links || []).length ? ' · ' + it.links.length + ' file' : ''}</span>
+          <span title="${esc(fmtDateTime(it.updatedAt))}">Update ${esc(ago(it.updatedAt))}</span></div>
+      </article>`;
+    }
+
+    function renderTable(list) {
+      const cols = [['user', 'User'], ['section', 'Section'], ['title', 'Pekerjaan'], ['status', 'Status'], ['dueDate', 'Deadline'], ['updatedAt', 'Last updated']];
+      const sorted = list.slice().sort((a, b) => String(a[sortKey] || '').localeCompare(String(b[sortKey] || '')) * sortDir);
+      return `<div class="table-wrap"><table><thead><tr>${cols.map(([k, l]) => `<th data-sort="${k}">${l}${sortKey === k ? (sortDir > 0 ? ' ↑' : ' ↓') : ''}</th>`).join('')}</tr></thead>
+        <tbody>${sorted.map((it) => {
+          const n = latestNote(it);
+          return `<tr data-id="${esc(it.id)}">
+            <td><b>${esc(it.user)}</b></td>
+            <td>${esc(it.section)}</td>
+            <td>${esc(it.title)}<div class="sub">${it.project ? esc(it.project) + ' · ' : ''}${esc(it.lastPosition || (n ? n.text : ''))}</div></td>
+            <td><span class="pill ${it.status.toLowerCase()}">${esc(it.status)}</span>${isOverdue(it) ? ' <span class="pill overdue">!</span>' : ''}</td>
+            <td>${fmtDate(it.dueDate)}</td>
+            <td>${fmtDateTime(it.updatedAt)}</td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`;
+    }
+
+    // ---------- events: list ----------
+    $('#list').addEventListener('click', (ev) => {
+      const th = ev.target.closest('th[data-sort]');
+      if (th) { const k = th.dataset.sort; if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = k === 'updatedAt' ? -1 : 1; } render(); return; }
+      const row = ev.target.closest('[data-id]');
+      if (row) openDetail(row.dataset.id);
+    });
+    $('#stats').addEventListener('click', (ev) => {
+      const s = ev.target.closest('.stat'); if (!s) return;
+      const sel = $('#fStatus');
+      if (s.dataset.f === 'overdue' && !sel.querySelector('option[value=overdue]')) sel.insertAdjacentHTML('beforeend', '<option value="overdue">Lewat deadline</option>');
+      sel.value = s.dataset.f; render();
+    });
+    ['#q', '#fSection', '#fStatus', '#fType'].forEach((s) => $(s).addEventListener('input', render));
+    $('#viewSeg').addEventListener('click', (ev) => {
+      const b = ev.target.closest('button'); if (!b) return;
+      view = b.dataset.view; lsSet(LS_VIEW, view);
+      document.querySelectorAll('#viewSeg button').forEach((x) => x.classList.toggle('on', x === b));
+      render();
+    });
+
+    // ---------- modal helpers ----------
+    function openModal(el) { $('#overlay').classList.add('open'); el.classList.add('open'); }
+    function closeAll() { $('#overlay').classList.remove('open'); $('#formModal').classList.remove('open'); $('#drawer').classList.remove('open'); openId = null; }
+    $('#overlay').addEventListener('click', closeAll);
+    document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => {
+      if (b.closest('#formModal') && openId) { $('#formModal').classList.remove('open'); return; }
+      closeAll();
+    }));
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeAll(); });
+
+    // ---------- form ----------
+    const parseLinks = (txt) => txt.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+      const i = l.lastIndexOf('|');
+      const label = i >= 0 ? l.slice(0, i).trim() : '';
+      const url = (i >= 0 ? l.slice(i + 1) : l).trim();
+      return { label: label || url, url };
+    });
+    const linksToText = (links) => (links || []).map((l) => (l.label && l.label !== l.url ? l.label + ' | ' : '') + l.url).join('\n');
+
+    function openForm(it, preset = {}) {
+      editingId = it ? it.id : null;
+      const f = $('#formModal');
+      f.reset();
+      $('#formTitle').textContent = it ? 'Edit pekerjaan' : 'Pekerjaan baru';
+      $('#firstNoteWrap').hidden = !!it;
+      const v = it || { type: 'Request', status: 'Baru', priority: 'Normal', requestDate: today(), ...preset };
+      ['user', 'section', 'type', 'project', 'title', 'description', 'status', 'priority', 'requestDate', 'dueDate', 'lastPosition'].forEach((k) => { f.elements[k].value = v[k] || f.elements[k].value; });
+      f.elements.links.value = linksToText(v.links);
+      if (!it && !v.section && DEFAULT_SECTIONS.length === 1 && !items.length) f.elements.section.value = DEFAULT_SECTIONS[0];
+      openModal(f);
+      setTimeout(() => f.elements[v.user ? 'title' : 'user'].focus(), 30);
+    }
+    $('#btnNew').addEventListener('click', () => {
+      const sec = $('#fSection').value;
+      openForm(null, sec ? { section: sec } : {});
+    });
+
+    $('#formModal').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target, now = new Date().toISOString();
+      const val = (k) => f.elements[k].value.trim();
+      const base = editingId ? structuredClone(items.find((i) => i.id === editingId)) : { id: uid(), createdAt: now, notes: [] };
+      const prevStatus = base.status;
+      Object.assign(base, {
+        user: val('user'), section: val('section'), type: val('type'), project: val('project'), title: val('title'),
+        description: val('description'), status: val('status'), priority: val('priority'),
+        requestDate: val('requestDate'), dueDate: val('dueDate'), lastPosition: val('lastPosition'),
+        links: parseLinks(f.elements.links.value), updatedAt: now
+      });
+      if (!editingId && val('firstNote')) base.notes.push({ id: uid(), at: now, text: val('firstNote') });
+      if (editingId && prevStatus !== base.status) base.notes.push({ id: uid(), at: now, text: `Status: ${prevStatus} → ${base.status}`, system: true });
+      if (base.status === 'Selesai' && !base.doneAt) base.doneAt = now;
+      if (base.status !== 'Selesai') delete base.doneAt;
+      await upsert(base);
+      toast(editingId ? 'Perubahan disimpan' : 'Pekerjaan ditambahkan');
+      $('#formModal').classList.remove('open');
+      if (openId) openDetail(base.id); else closeAll();
+    });
+
+    async function upsert(it) {
+      const prev = items.slice();
+      const i = items.findIndex((x) => x.id === it.id);
+      if (i >= 0) items[i] = it; else items.push(it);
+      render();
+      try { await persist('upsert', { item: it }); render(); }
+      catch { items = prev; render(); throw new Error('save failed'); }
+    }
+
+    // ---------- detail ----------
+    function openDetail(id) {
+      const it = items.find((i) => i.id === id); if (!it) return;
+      openId = id;
+      $('#dKicker').textContent = `${it.section} · ${it.user}`;
+      $('#dTitle').textContent = it.title;
+      $('#dStatus').value = it.status;
+      const notes = (it.notes || []).slice().sort((a, b) => b.at.localeCompare(a.at));
+      $('#dBody').innerHTML = `
+        <div class="meta" style="margin-bottom:12px">${badges(it)}</div>
+        <dl class="kv">
+          <dt>User</dt><dd><b>${esc(it.user)}</b></dd>
+          <dt>Section</dt><dd>${esc(it.section)}</dd>
+          <dt>Jenis</dt><dd>${esc(it.type)}${it.project ? ' — ' + esc(it.project) : ''}</dd>
+          <dt>Prioritas</dt><dd>${esc(it.priority)}</dd>
+          <dt>Tgl request</dt><dd>${fmtDate(it.requestDate)}</dd>
+          <dt>Deadline</dt><dd>${fmtDate(it.dueDate)}</dd>
+          <dt>Posisi terakhir</dt><dd>${esc(it.lastPosition || '—')}</dd>
+          <dt>Last updated</dt><dd>${fmtDateTime(it.updatedAt)} (${esc(ago(it.updatedAt))})</dd>
+          ${it.doneAt ? `<dt>Selesai</dt><dd>${fmtDateTime(it.doneAt)}</dd>` : ''}
+        </dl>
+        ${it.description ? `<div class="h3">Detail request</div><div class="desc">${esc(it.description)}</div>` : ''}
+        ${(it.links || []).length ? `<div class="h3">Data / dokumen</div><div class="links">${it.links.map((l) => {
+          const safe = /^(https?:|mailto:)/i.test(l.url) ? l.url : '';
+          return safe ? `<a href="${esc(safe)}" target="_blank" rel="noopener">📎 ${esc(l.label)}</a>` : `<div>📎 ${esc(l.label)}${l.label !== l.url ? ' — ' + esc(l.url) : ''}</div>`;
+        }).join('')}</div>` : ''}
+        <div class="h3">Catatan &amp; update (${notes.length})</div>
+        <form class="addnote" id="noteForm">
+          <textarea class="field" id="noteText" rows="2" placeholder="Tulis update… mis. 'CV 3 kandidat sudah dikirim ke user'"></textarea>
+          <div class="row"><label class="row" style="font-size:12px;gap:4px"><input type="checkbox" id="notePos" /> jadikan "posisi terakhir"</label>
+            <span style="flex:1"></span><button class="btn small primary" type="submit">Tambah catatan</button></div>
+        </form>
+        ${notes.length ? `<ul class="timeline">${notes.map((n) => `<li>
+          <div class="when"><span>${fmtDateTime(n.at)}</span>${n.system ? '' : `<button class="btn ghost small" data-delnote="${esc(n.id)}" title="Hapus catatan">✕</button>`}</div>
+          <div class="txt"${n.system ? ' style="color:var(--ink-soft);font-style:italic"' : ''}>${esc(n.text)}</div></li>`).join('')}</ul>`
+          : '<p style="color:var(--ink-soft)">Belum ada catatan.</p>'}`;
+      if (!$('#drawer').classList.contains('open')) openModal($('#drawer'));
+    }
+
+    $('#dBody').addEventListener('submit', async (ev) => {
+      if (ev.target.id !== 'noteForm') return;
+      ev.preventDefault();
+      const text = $('#noteText').value.trim(); if (!text) return;
+      const it = structuredClone(items.find((i) => i.id === openId));
+      const now = new Date().toISOString();
+      it.notes = [...(it.notes || []), { id: uid(), at: now, text }];
+      if ($('#notePos').checked) it.lastPosition = text;
+      it.updatedAt = now;
+      try { await upsert(it); toast('Catatan ditambahkan'); openDetail(it.id); } catch {}
+    });
+    $('#dBody').addEventListener('click', async (ev) => {
+      const b = ev.target.closest('[data-delnote]'); if (!b) return;
+      if (!confirm('Hapus catatan ini?')) return;
+      const it = structuredClone(items.find((i) => i.id === openId));
+      it.notes = it.notes.filter((n) => n.id !== b.dataset.delnote);
+      try { await upsert(it); openDetail(it.id); } catch {}
+    });
+    $('#dStatus').addEventListener('change', async (ev) => {
+      const it = structuredClone(items.find((i) => i.id === openId));
+      const now = new Date().toISOString(), next = ev.target.value;
+      if (it.status === next) return;
+      it.notes = [...(it.notes || []), { id: uid(), at: now, text: `Status: ${it.status} → ${next}`, system: true }];
+      it.status = next; it.updatedAt = now;
+      if (next === 'Selesai') it.doneAt = now; else delete it.doneAt;
+      try { await upsert(it); toast('Status: ' + next); openDetail(it.id); } catch {}
+    });
+    $('#dEdit').addEventListener('click', () => openForm(items.find((i) => i.id === openId)));
+    $('#dDelete').addEventListener('click', async () => {
+      const it = items.find((i) => i.id === openId);
+      if (!confirm(`Hapus "${it.title}" milik ${it.user}? Tidak bisa dibatalkan.`)) return;
+      const prev = items.slice();
+      items = items.filter((i) => i.id !== it.id);
+      closeAll(); render();
+      try { await persist('delete', { id: it.id }); render(); toast('Dihapus'); } catch { items = prev; render(); }
+    });
+
+    // ---------- export / import ----------
+    function download(name, content, type) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([content], { type }));
+      a.download = name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+    $('#btnBackup').addEventListener('click', () => download(`work-tracker-backup-${today()}.json`, JSON.stringify(items, null, 2), 'application/json'));
+    $('#btnExportCsv').addEventListener('click', () => {
+      const head = ['User', 'Section', 'Jenis', 'Project', 'Pekerjaan', 'Detail', 'Status', 'Prioritas', 'Tgl Request', 'Deadline', 'Posisi Terakhir', 'Catatan', 'Link', 'Dibuat', 'Last Updated'];
+      const cell = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+      const rows = filtered().map((it) => [it.user, it.section, it.type, it.project, it.title, it.description, it.status, it.priority, it.requestDate, it.dueDate, it.lastPosition,
+        (it.notes || []).map((n) => `[${fmtDateTime(n.at)}] ${n.text}`).join('\n'), (it.links || []).map((l) => `${l.label}: ${l.url}`).join('\n'),
+        fmtDateTime(it.createdAt), fmtDateTime(it.updatedAt)].map(cell).join(','));
+      download(`work-tracker-${today()}.csv`, '﻿' + [head.map(cell).join(','), ...rows].join('\r\n'), 'text/csv');
+    });
+    $('#btnImport').addEventListener('click', () => $('#importFile').click());
+    $('#importFile').addEventListener('change', async (ev) => {
+      const file = ev.target.files[0]; ev.target.value = '';
+      if (!file) return;
+      try {
+        const data = JSON.parse(await file.text());
+        if (!Array.isArray(data) || data.some((d) => !d.id || !d.title)) throw new Error('Format file tidak dikenali');
+        if (!confirm(`Import ${data.length} pekerjaan? Data yang sekarang (${items.length}) akan DIGANTI.`)) return;
+        const prev = items; items = data;
+        try { await persist('replace', { items: data }); } catch { items = prev; }
+        render(); toast('Import selesai');
+      } catch (e) { alert('Gagal import: ' + e.message); }
+    });
+
+    start();
+  })();
+  </script>
+</body>
+</html>

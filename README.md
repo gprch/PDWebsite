@@ -64,3 +64,26 @@ DNS instructions for whichever registrar you bought the domain from.
 
 Everything here is plain HTML/CSS inside `.astro` files — no build tooling
 knowledge needed beyond `npm run dev` to preview changes.
+
+## Work Tracker (`/tracker`)
+
+Halaman internal untuk mencatat pekerjaan / request per **user** dan **section**
+(mis. HR Operations → Chendika Putra → "Rekap budget Q3"), lengkap dengan
+status, deadline, posisi terakhir, link dokumen (CV, rekap, dll.) dan
+catatan update bertanggal. Bisa dilihat per user atau sebagai tabel, dan
+di-export ke CSV (Excel).
+
+Data disimpan online lewat Netlify Function (`netlify/functions/tracker.mjs`)
++ Netlify Blobs, jadi bisa dibuka dari perangkat mana pun. Aktifkan sekali:
+
+1. Netlify → **Site configuration → Environment variables** → tambah
+   `TRACKER_PASSWORD` dengan password pilihan Anda.
+2. Deploy ulang (Deploys → Trigger deploy).
+3. Buka `https://your-site.netlify.app/tracker` dan masukkan password tersebut.
+
+Saat dijalankan lokal dengan `npm run dev`, tracker otomatis memakai
+**mode lokal** (data hanya di browser itu). Gunakan tombol **Backup** /
+**Import** untuk memindahkan data.
+
+File seperti CV tidak di-upload ke situs — simpan di Google Drive/OneDrive
+lalu tempel link-nya di kolom "Link data / dokumen".
